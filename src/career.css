@@ -1,0 +1,41 @@
+/* OUTER */
+.carousel-wrapper {
+  width: 100%;
+  overflow: hidden;
+}
+
+/* TRACK */
+.carousel-track {
+  display: flex;
+  gap: 25px;
+  width: max-content;
+  animation: scroll 20s linear infinite;
+  will-change: transform;
+}
+
+/* CARD */
+.job-card {
+  min-width: 260px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  border: 1px solid #f1f1f1;
+  flex-shrink: 0;
+}
+
+/* HOVER PAUSE */
+.carousel-track:hover {
+  animation-play-state: paused;
+}
+
+/* 🔥 KEY FIX: smooth infinite loop */
+@keyframes scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    /* move exactly half because we duplicated jobs */
+    transform: translateX(-50%);
+  }
+}

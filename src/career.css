@@ -1,21 +1,24 @@
-/* OUTER */
+/* OUTER FULL WIDTH */
 .carousel-wrapper {
   width: 100%;
   overflow: hidden;
+  padding: 20px 0;
 }
 
-/* TRACK */
+/* TRACK FULL FLEX ROW */
 .carousel-track {
   display: flex;
   gap: 25px;
   width: max-content;
-  animation: scroll 20s linear infinite;
+  animation: scroll 25s linear infinite;
   will-change: transform;
+  padding: 10px 20px;
 }
 
 /* CARD */
 .job-card {
-  min-width: 260px;
+  min-width: 280px;
+  max-width: 280px;
   background: #fff;
   border-radius: 14px;
   padding: 18px;
@@ -24,18 +27,22 @@
   flex-shrink: 0;
 }
 
-/* HOVER PAUSE */
+/* CENTER FULL PAGE */
+.carousel-wrapper h3 {
+  font-size: 24px;
+}
+
+/* PAUSE ON HOVER */
 .carousel-track:hover {
   animation-play-state: paused;
 }
 
-/* 🔥 KEY FIX: smooth infinite loop */
+/* SCROLL ANIMATION */
 @keyframes scroll {
   0% {
     transform: translateX(0);
   }
   100% {
-    /* move exactly half because we duplicated jobs */
     transform: translateX(-50%);
   }
 }

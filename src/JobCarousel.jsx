@@ -1,47 +1,21 @@
-import React, { useEffect, useState } from "react";
-import axios from "axios";
-import "bootstrap/dist/css/bootstrap.min.css";
+import React from "react";
+import JobCard from "./JobCard";
 
-function JobCarousel() {
-  const [jobs, setJobs] = useState([]);
-
-  useEffect(() => {
-    axios
-      .get("http://localhost:8082/api/jobs")
-      .then((res) => setJobs(res.data.jobs || []))
-      .catch((err) => console.log(err));
-  }, []);
+function JobCarousel({ jobs }) {
+  const loopJobs = jobs.length > 0 ? [...jobs, ...jobs] : [];
 
   return (
-    <section className="container py-5">
-      <h2 className="text-center mb-4">Current Openings</h2>
+    <div className="carousel-wrapper w-80 py-4">
+      <h3 className="text-center mb-4 fw-bold">🚀 Latest Job Openings</h3>
 
-      <div className="row justify-content-center g-4">
-        {jobs.map((job, index) => (
-          <div
-            key={index}
-            className="col-12 col-md-6 col-lg-4 d-flex justify-content-center"
-          >
-            <div
-              className="card shadow p-3 text-center border-0"
-              style={{
-                width: "100%",
-                maxWidth: "320px",
-                borderRadius: "12px",
-              }}
-            >
-              <h5 className="text-primary">{job.jobrole}</h5>
-
-              <p className="mb-1">📍 {job.joblocation}</p>
-
-              <p className="mb-1">🕒 {job.jobtype}</p>
-
-              <p className="text-muted small">{job.jobdescription}</p>
-            </div>
-          </div>
-        ))}
+      <div className="carousel-track d-flex align-items-stretch">
+        {loopJobs.length === 0 ? (
+          <div className="w-100 text-center text-muted">No jobs available</div>
+        ) : (
+          loopJobs.map((job, i) => <JobCard key={i} job={job} />)
+        )}
       </div>
-    </section>
+    </div>
   );
 }
 

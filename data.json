@@ -1,0 +1,59 @@
+{
+  "jobs": [
+    {
+      "role": "React Developer",
+      "location": "Hyderabad",
+      "type": "parttime",
+      "desc": "Build UI components using React"
+    },
+    {
+      "role": "Node.js Developer",
+      "location": "Hyderabad",
+      "type": "Full Time",
+      "desc": "Develop backend APIs"
+    },
+    {
+      "role": "UI/UX Designer",
+      "location": "Hyderabad",
+      "type": "Full Time",
+      "desc": "Design user interfaces"
+    },
+    {
+      "role": "Angular Developer",
+      "location": "Hyderabad",
+      "type": "Full Time",
+      "desc": "Build Angular web apps"
+    },
+    {
+      "role": "Java Developer",
+      "location": "Hyderabad",
+      "type": "Full Time",
+      "desc": "Java backend development"
+    },
+    {
+      "role": "Python Developer",
+      "location": "Hyderabad",
+      "type": "Full Time",
+      "desc": "Python automation and backend"
+    },
+    {
+      "role": "QA Tester",
+      "location": "Hyderabad",
+      "type": "Full Time",
+      "desc": "Test application quality"
+    },
+    {
+      "role": "DevOps Engineer",
+      "location": "Hyderabad",
+      "type": "Full Time",
+      "desc": "CI/CD and deployment"
+    },
+    {
+      "role": "Full Stack Developer",
+      "location": "chennai",
+      "type": "Full Time",
+      "desc": "Frontend + Backend work"
+    }
+  ],
+  "hrEmail": "bodasunavya24@gmail.com"
+}

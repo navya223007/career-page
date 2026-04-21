@@ -7,6 +7,7 @@ const multer = require("multer");
 const xlsx = require("xlsx");
 const nodemailer = require("nodemailer");
 const fs = require("fs");
+const mysql = require("mysql2");
 
 const app = express();
 
@@ -14,55 +15,25 @@ app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
+/* ================= MYSQL ================= */
+const db = mysql.createConnection({
+  host: "localhost",
+  user: "root",
+  password: "123456789",
+  database: "career_portal",
+});
+
+db.connect((err) => {
+  if (err) console.log("DB Error:", err);
+  else console.log("MySQL Connected");
+});
+
+/* ================= CONFIG ================= */
 const PORT = process.env.PORT || 8082;
 
-/* ================= FILE ================= */
-const DATA_FILE = "./data.json";
-
 /* ================= MEMORY ================= */
-let jobs = [];
-let hrEmail = "";
-
-/* ================= OTP STORAGE ================= */
 const otpStore = new Map();
-
-/* ================= LOAD DATA (IMPORTANT FIX) ================= */
-function loadData() {
-  if (fs.existsSync(DATA_FILE)) {
-    const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
-
-    jobs = data.jobs || [];
-    hrEmail = data.hrEmail || "";
-
-    if (data.otpStore) {
-      otpStore.clear();
-      data.otpStore.forEach(([key, value]) => {
-        otpStore.set(key, value);
-      });
-    }
-
-    console.log("✅ Data Loaded");
-    console.log("Jobs:", jobs.length);
-    console.log("HR Email:", hrEmail);
-  }
-}
-
-function saveData() {
-  fs.writeFileSync(
-    DATA_FILE,
-    JSON.stringify(
-      {
-        jobs,
-        hrEmail,
-        otpStore: Array.from(otpStore.entries()),
-      },
-      null,
-      2,
-    ),
-  );
-}
-
-loadData();
+let hrEmail = "";
 
 /* ================= EMAIL ================= */
 const transporter = nodemailer.createTransport({
@@ -73,7 +44,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-/* ================= OTP ================= */
+/* ================= HELPERS ================= */
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -82,33 +53,38 @@ function normalizeEmail(email) {
   return email?.toString().trim().toLowerCase();
 }
 
+/* ================= MULTER ================= */
+const upload = multer({ dest: "uploads/" });
+
 /* ================= SEND OTP ================= */
 app.post("/api/send-otp", async (req, res) => {
   const { email } = req.body;
 
-  if (!email) {
+  if (!email)
     return res.status(400).json({ success: false, message: "Email required" });
+
+  try {
+    const otp = generateOTP();
+    const key = normalizeEmail(email);
+
+    otpStore.set(key, {
+      otp,
+      verified: false,
+      expiry: Date.now() + 5 * 60 * 1000,
+    });
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "OTP Verification",
+      text: `Your OTP is ${otp}`,
+    });
+
+    res.json({ success: true, message: "OTP sent" });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ success: false, message: "OTP failed" });
   }
-
-  const otp = generateOTP();
-  const key = normalizeEmail(email);
-
-  otpStore.set(key, {
-    otp,
-    verified: false,
-    expiry: Date.now() + 5 * 60 * 1000,
-  });
-
-  saveData();
-
-  await transporter.sendMail({
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: "OTP Verification",
-    text: `Your OTP is ${otp}`,
-  });
-
-  res.json({ success: true, message: "OTP sent" });
 });
 
 /* ================= VERIFY OTP ================= */
@@ -128,42 +104,76 @@ app.post("/api/verify-otp", (req, res) => {
     return res.status(401).json({ success: false, message: "Invalid OTP" });
 
   data.verified = true;
-
-  saveData();
+  hrEmail = key;
 
   res.json({ success: true, message: "OTP verified" });
 });
 
-/* ================= MULTER ================= */
-const upload = multer({ dest: "uploads/" });
+/* ================= UPLOAD JOBS ================= */
+app.post("/api/upload-jobs", upload.single("file"), async (req, res) => {
+  const fs = require("fs");
+  const xlsx = require("xlsx");
 
-/* ================= EXCEL UPLOAD ================= */
-app.post("/api/upload-jobs", upload.single("file"), (req, res) => {
+  /* ================= DELETE FILE FUNCTION ================= */
+
   const deleteFile = () => {
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    try {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    } catch (e) {
+      console.log("Delete error:", e);
     }
   };
 
+  /* ================= NORMALIZE FUNCTION ================= */
+
+  const normalize = (value) => {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .trim();
+  };
+
   try {
-    const email = normalizeEmail(req.body.email);
+    /* ================= GET EMAIL ================= */
+
+    const { email } = req.body;
+
+    if (!email) {
+      deleteFile();
+      return res.status(400).json({
+        success: false,
+        message: "Email required",
+      });
+    }
+
+    /* ================= CHECK OTP ================= */
+
     const otpData = otpStore.get(email);
 
-    if (!otpData || !otpData.verified) {
+    if (!otpData?.verified) {
+      deleteFile();
+
       return res.status(403).json({
         success: false,
         message: "OTP not verified",
       });
     }
 
+    /* ================= CHECK FILE ================= */
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: "Excel required",
+        message: "Excel file required",
       });
     }
 
+    /* ================= READ EXCEL ================= */
+
     const workbook = xlsx.readFile(req.file.path);
+
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
     const data = xlsx.utils.sheet_to_json(sheet, {
@@ -171,63 +181,95 @@ app.post("/api/upload-jobs", upload.single("file"), (req, res) => {
       defval: "",
     });
 
-    if (!data?.length) {
+    if (!data.length) {
       deleteFile();
+
       return res.status(400).json({
         success: false,
-        message: "Excel is empty",
+        message: "Excel file is empty",
       });
     }
 
-    /* ================= HELPERS ================= */
-    const clean = (v) =>
-      String(v || "")
-        .toLowerCase()
-        .replace(/\s+/g, "")
-        .trim();
+    /* ================= FIND TARGET EMAIL ================= */
 
-    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/;
+    let detectedTargetEmail = "";
 
-    /* ================= FIND HR EMAIL (FIXED) ================= */
-    let hrEmail = "";
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    for (const row of data) {
-      const rowText = row.map(clean).join("");
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
 
-      if (rowText.includes("targetemail")) {
-        for (const cell of row) {
-          const match = String(cell).match(emailRegex);
+      const rowText = row.map(normalize).join("");
 
-          if (match) {
-            hrEmail = normalizeEmail(match[0]);
+      if (
+        rowText.includes("targetmailid") ||
+        rowText.includes("targetemail") ||
+        rowText.includes("targetmail") ||
+        rowText.includes("hremail") ||
+        rowText.includes("contactemail")
+      ) {
+        for (let cell of row) {
+          const value = String(cell || "").trim();
+
+          if (emailRegex.test(value)) {
+            detectedTargetEmail = value.toLowerCase();
+            break;
+          }
+        }
+
+        if (!detectedTargetEmail && data[i + 1]) {
+          for (let cell of data[i + 1]) {
+            const value = String(cell || "").trim();
+
+            if (emailRegex.test(value)) {
+              detectedTargetEmail = value.toLowerCase();
+              break;
+            }
+          }
+        }
+      }
+
+      if (!detectedTargetEmail) {
+        for (let cell of row) {
+          const value = String(cell || "").trim();
+
+          if (emailRegex.test(value)) {
+            detectedTargetEmail = value.toLowerCase();
             break;
           }
         }
       }
 
-      if (hrEmail) break;
+      if (detectedTargetEmail) break;
     }
 
-    if (!hrEmail) {
+    /* ================= VALIDATE TARGET EMAIL ================= */
+
+    if (!detectedTargetEmail) {
       deleteFile();
+
       return res.status(400).json({
         success: false,
-        message: "Target Email not found",
+        message: "Target Mail Id not found in Excel",
       });
     }
 
+    console.log("Detected Target Email:", detectedTargetEmail);
+
     /* ================= FIND HEADER ROW ================= */
+
     let headerIndex = -1;
 
     for (let i = 0; i < data.length; i++) {
-      const rowText = data[i].map(clean).join("");
+      const rowText = data[i].map(normalize).join("");
 
       if (
-        rowText.includes("jobrole") ||
-        (rowText.includes("role") &&
-          rowText.includes("location") &&
-          rowText.includes("type") &&
-          rowText.includes("desc"))
+        rowText.includes("role") &&
+        rowText.includes("location") &&
+        rowText.includes("type") &&
+        (rowText.includes("desc") ||
+          rowText.includes("description") ||
+          rowText.includes("details"))
       ) {
         headerIndex = i;
         break;
@@ -236,192 +278,256 @@ app.post("/api/upload-jobs", upload.single("file"), (req, res) => {
 
     if (headerIndex === -1) {
       deleteFile();
+
       return res.status(400).json({
         success: false,
-        message: "Header row not found",
+        message: "Job header row not found",
       });
     }
 
-    const headers = data[headerIndex].map(clean);
+    /* ================= GET HEADERS ================= */
 
-    /* ================= COLUMN INDEX ================= */
-    const findIndex = (keys) =>
-      headers.findIndex((h) => keys.some((k) => h.includes(k)));
+    const headers = data[headerIndex].map(normalize);
 
-    const roleIndex = findIndex(["role", "jobrole"]);
+    /* ================= FIND COLUMN INDEX ================= */
+
+    const findIndex = (keywords) => {
+      return headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+    };
+
+    const roleIndex = findIndex(["role"]);
     const locationIndex = findIndex(["location"]);
-    const typeIndex = findIndex(["type", "jobtype"]);
-    const descIndex = findIndex(["desc", "description"]);
+    const typeIndex = findIndex(["type"]);
+    const descIndex = findIndex(["description", "details", "desc"]);
 
-    if (
-      roleIndex === -1 ||
-      locationIndex === -1 ||
-      typeIndex === -1 ||
-      descIndex === -1
-    ) {
+    if (roleIndex < 0 || locationIndex < 0 || typeIndex < 0 || descIndex < 0) {
       deleteFile();
+
       return res.status(400).json({
         success: false,
-        message: "Invalid columns in Excel",
+        message:
+          "Missing required columns: Role / Location / Type / Description",
       });
     }
 
-    /* ================= BUILD JOBS ================= */
-    const jobsData = [];
-    const errors = [];
+    /* ================= READ JOB ROWS ================= */
+
+    const jobs = [];
 
     for (let i = headerIndex + 1; i < data.length; i++) {
       const row = data[i];
 
-      const job = {
-        role: row[roleIndex],
-        location: row[locationIndex],
-        type: row[typeIndex],
-        desc: row[descIndex],
-      };
+      const role = String(row[roleIndex] || "").trim();
+      const location = String(row[locationIndex] || "").trim();
+      const type = String(row[typeIndex] || "").trim();
+      const description = String(row[descIndex] || "").trim();
 
-      // skip empty rows
-      if (!job.role && !job.location && !job.type && !job.desc) continue;
+      if (!role && !location && !type && !description) continue;
 
-      // collect validation errors
-      if (!job.role || !job.location || !job.type || !job.desc) {
-        errors.push({
-          row: i + 1,
-          issue: "Missing required field",
-        });
-        continue;
-      }
-
-      jobsData.push(job);
+      jobs.push([role, location, type, description, detectedTargetEmail]);
     }
 
-    if (jobsData.length === 0) {
+    if (jobs.length === 0) {
       deleteFile();
+
       return res.status(400).json({
         success: false,
         message: "No valid job rows found",
       });
     }
 
-    /* ================= SAVE ================= */
-    jobs = jobsData;
-    global.hrEmail = hrEmail;
+    /* ================= SAFE DATABASE TRANSACTION ================= */
 
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ jobs, hrEmail }, null, 2));
+    const sql =
+      "INSERT INTO jobs (role, location, type, description, target_email) VALUES ?";
+
+    db.beginTransaction((err) => {
+      if (err) {
+        deleteFile();
+
+        return res.status(500).json({
+          success: false,
+          message: "Transaction start failed",
+        });
+      }
+
+      /* DELETE OLD JOBS */
+
+      db.query("DELETE FROM jobs", (deleteErr) => {
+        if (deleteErr) {
+          return db.rollback(() => {
+            deleteFile();
+
+            res.status(500).json({
+              success: false,
+              message: "Failed to clear old jobs",
+            });
+          });
+        }
+
+        /* INSERT NEW JOBS */
+
+        db.query(sql, [jobs], (insertErr) => {
+          if (insertErr) {
+            return db.rollback(() => {
+              deleteFile();
+
+              res.status(500).json({
+                success: false,
+                message: "Database insert failed",
+              });
+            });
+          }
+
+          /* COMMIT */
+
+          db.commit((commitErr) => {
+            deleteFile();
+
+            if (commitErr) {
+              return db.rollback(() => {
+                res.status(500).json({
+                  success: false,
+                  message: "Commit failed",
+                });
+              });
+            }
+
+            res.json({
+              success: true,
+              message: "Jobs uploaded successfully",
+              count: jobs.length,
+            });
+          });
+        });
+      });
+    });
+  } catch (err) {
+    console.log(err);
 
     deleteFile();
 
-    return res.json({
-      success: true,
-      message: "Jobs uploaded successfully",
-      hrEmail,
-      jobs,
-      errors,
-    });
-  } catch (err) {
-    console.log("UPLOAD ERROR:", err);
-
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      deleteFile();
-    }
-
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: "Upload failed",
     });
   }
 });
 /* ================= APPLY JOB ================= */
-app.post("/api/apply", upload.single("resume"), async (req, res) => {
+app.post("/api/apply", upload.single("resume"), (req, res) => {
   const { name, email, phone, role } = req.body;
-
-  if (!name || !email || !phone || !role) {
-    return res.status(400).json({
-      success: false,
-      message: "All fields required",
-    });
-  }
-
-  if (!hrEmail) {
-    return res.status(400).json({
-      success: false,
-      message: "Upload Excel first",
-    });
-  }
 
   const filePath = req.file?.path;
 
-  // ✅ Respond immediately (FAST UI response)
-  res.json({
-    success: true,
-    message: "Application received (sending email...)",
-  });
-
-  // 🔥 Send email in background (NON-BLOCKING)
-  transporter.sendMail(
-    {
-      from: process.env.EMAIL_USER,
-      to: hrEmail,
-      subject: `New Application - ${role}`,
-      text: `Name: ${name}\nEmail: ${email}\nPhone: ${phone}\nRole: ${role}`,
-      attachments: [
-        {
-          filename: req.file.originalname,
-          path: filePath,
-        },
-      ],
-    },
-    (err, info) => {
+  const deleteFile = () => {
+    try {
       if (filePath && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
+    } catch (e) {
+      console.log(e);
+    }
+  };
 
+  if (!name || !email || !phone || !role) {
+    deleteFile();
+    return res.status(400).json({
+      success: false,
+      message: "Missing fields",
+    });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      message: "Resume file required",
+    });
+  }
+
+  if (req.file.mimetype !== "application/pdf") {
+    deleteFile();
+    return res.status(400).json({
+      success: false,
+      message: "Only PDF resume allowed",
+    });
+  }
+
+  /* ================= ⭐ FIX START HERE ================= */
+
+  const roles = role.split(",").map((r) => r.trim());
+
+  db.query(
+    `SELECT DISTINCT target_email FROM jobs WHERE role IN (?)`,
+    [roles],
+    (err, result) => {
       if (err) {
-        console.log("Email error:", err);
-      } else {
-        console.log("Email sent:", info.response);
+        deleteFile();
+        return res.status(500).json({
+          success: false,
+          message: "Database error",
+        });
       }
+
+      if (!result.length) {
+        deleteFile();
+        return res.status(404).json({
+          success: false,
+          message: "Job not found",
+        });
+      }
+
+      const targetEmail = result[0].target_email;
+
+      res.json({
+        success: true,
+        message: "Application received",
+      });
+
+      transporter.sendMail(
+        {
+          from: process.env.EMAIL_USER,
+          to: targetEmail,
+          subject: `New Application - ${role}`,
+          text:
+            `Name: ${name}\n` +
+            `Email: ${email}\n` +
+            `Phone: ${phone}\n` +
+            `Role: ${role}`,
+          attachments: [
+            {
+              filename: req.file.originalname,
+              path: filePath,
+            },
+          ],
+        },
+        () => {
+          deleteFile();
+        },
+      );
     },
   );
 });
 /* ================= GET JOBS ================= */
 app.get("/api/jobs", (req, res) => {
-  res.json({ jobs });
+  db.query("SELECT * FROM jobs", (err, result) => {
+    if (err) return res.status(500).json({ success: false, jobs: [] });
+
+    res.json({ success: true, jobs: result });
+  });
 });
 
 /* ================= ROLES ================= */
 app.get("/api/roles", (req, res) => {
-  try {
-    if (!Array.isArray(jobs)) {
-      return res.status(200).json({
-        success: true,
-        roles: [],
-        message: "No jobs found",
-      });
-    }
+  db.query("SELECT id, role FROM jobs", (err, result) => {
+    if (err) return res.status(500).json({ success: false, roles: [] });
 
-    const roles = [
-      ...new Set(
-        jobs
-          .filter((j) => j && j.role) // safety check
-          .map((j) => j.role.trim()),
-      ),
-    ];
-
-    return res.status(200).json({
+    res.json({
       success: true,
-      roles,
+      roles: result, // now contains id + role
     });
-  } catch (err) {
-    console.log("Roles API error:", err);
-
-    return res.status(500).json({
-      success: false,
-      roles: [],
-      message: "Failed to fetch roles",
-    });
-  }
+  });
 });
+
 /* ================= START ================= */
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

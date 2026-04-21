@@ -16,7 +16,7 @@ function JobCard({ job }) {
       </p>
 
       <p className="mb-0 text-muted">
-        📝 <strong>Description:</strong> {job.desc || "No description"}
+        📝 <strong>Description:</strong> {job.description || "No description"}
       </p>
     </div>
   );

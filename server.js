@@ -60,14 +60,20 @@ const upload = multer({ dest: "uploads/" });
 app.post("/api/send-otp", async (req, res) => {
   const { email } = req.body;
 
-  if (!email)
-    return res.status(400).json({ success: false, message: "Email required" });
+  const adminEmail = normalizeEmail(process.env.EMAIL_USER);
+  const userEmail = normalizeEmail(email);
+
+  if (userEmail !== adminEmail) {
+    return res.status(403).json({
+      success: false,
+      message: "Unauthorized email",
+    });
+  }
 
   try {
     const otp = generateOTP();
-    const key = normalizeEmail(email);
 
-    otpStore.set(key, {
+    otpStore.set(userEmail, {
       otp,
       verified: false,
       expiry: Date.now() + 5 * 60 * 1000,
@@ -75,18 +81,34 @@ app.post("/api/send-otp", async (req, res) => {
 
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
-      to: email,
+      to: userEmail,
       subject: "OTP Verification",
       text: `Your OTP is ${otp}`,
     });
 
-    res.json({ success: true, message: "OTP sent" });
+    res.json({
+      success: true,
+      message: "OTP sent",
+    });
   } catch (err) {
     console.log(err);
-    res.status(500).json({ success: false, message: "OTP failed" });
+
+    res.status(500).json({
+      success: false,
+      message: "OTP failed",
+    });
   }
 });
+/* ================= GET ADMIN EMAIL ================= */
 
+app.get("/api/admin-email", (req, res) => {
+  const adminEmail = process.env.EMAIL_USER;
+
+  res.json({
+    success: true,
+    email: adminEmail,
+  });
+});
 /* ================= VERIFY OTP ================= */
 app.post("/api/verify-otp", (req, res) => {
   const { email, otp } = req.body;
@@ -150,7 +172,9 @@ app.post("/api/upload-jobs", upload.single("file"), async (req, res) => {
 
     /* ================= CHECK OTP ================= */
 
-    const otpData = otpStore.get(email);
+    const key = normalizeEmail(email);
+
+    const otpData = otpStore.get(key);
 
     if (!otpData?.verified) {
       deleteFile();

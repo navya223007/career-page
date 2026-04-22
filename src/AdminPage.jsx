@@ -11,40 +11,30 @@ function AdminPage() {
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // ROLES STATE
-  const [roles, setRoles] = useState([]);
-  const [selectedRoles, setSelectedRoles] = useState([]);
-
   const navigate = useNavigate();
 
   const goHome = () => {
     navigate("/", { replace: true, state: { refresh: true } });
   };
 
-  /* ================= FETCH ROLES FUNCTION ================= */
+  /* ================= FETCH ADMIN EMAIL ================= */
 
-  const fetchRoles = () => {
+  useEffect(() => {
     axios
-      .get("http://localhost:8082/api/roles")
+      .get("http://localhost:8082/api/admin-email")
       .then((res) => {
         if (res.data.success) {
-          setRoles(res.data.roles);
+          setEmail(res.data.email);
         }
       })
       .catch((err) => console.log(err));
-  };
-
-  /* ================= FETCH ROLES ON LOAD ================= */
-
-  useEffect(() => {
-    fetchRoles();
   }, []);
 
-  /* ================= OTP ================= */
+  /* ================= SEND OTP ================= */
 
   const sendOtp = async () => {
     if (!email) {
-      alert("Enter email");
+      alert("Email not loaded yet");
       return;
     }
 
@@ -56,9 +46,11 @@ function AdminPage() {
       setStep(2);
     } catch (err) {
       console.log(err);
-      alert("Failed to send OTP");
+      alert(err.response?.data?.message || "Failed to send OTP");
     }
   };
+
+  /* ================= VERIFY OTP ================= */
 
   const verifyOtp = async () => {
     if (!otp) {
@@ -74,6 +66,7 @@ function AdminPage() {
 
       if (res.data.success) {
         setVerified(true);
+        setOtp("");
         setStep(3);
       } else {
         alert("Invalid OTP");
@@ -134,14 +127,12 @@ function AdminPage() {
       setLoading(false);
 
       if (res.data.success) {
+        setFile(null);
         setStep(4);
-
-        // Refresh roles after upload
-        fetchRoles();
 
         setTimeout(() => {
           navigate("/", { replace: true });
-        }, 1000);
+        }, 1200);
       } else {
         alert(res.data.message);
       }
@@ -152,100 +143,119 @@ function AdminPage() {
     }
   };
 
-  /* ================= ROLE SELECT TOGGLE ================= */
+  /* ================= BACKGROUND STYLE ================= */
 
-  const toggleRole = (id) => {
-    setSelectedRoles((prev) =>
-      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id],
-    );
+  const backgroundStyle = {
+    backgroundImage: "url('/admin-bg.jpg')",
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   };
 
   return (
-    <div className="container py-5">
-      <div className="row justify-content-center">
-        <div className="col-md-6">
-          <div className="card shadow p-4">
-            {/* HEADER */}
+    <div style={backgroundStyle}>
+      <div className="container">
+        <div className="row justify-content-center">
+          <div className="col-md-6">
+            <div
+              className="card shadow p-4"
+              style={{
+                backgroundColor: "rgba(255, 255, 255, 0.95)",
+                backdropFilter: "blur(4px)",
+                borderRadius: "12px",
+              }}
+            >
+              {/* HEADER */}
 
-            <div className="d-flex justify-content-between mb-3">
-              <h4>Admin Panel</h4>
-
-              <button
-                className="btn btn-sm btn-outline-secondary"
-                onClick={goHome}
-              >
-                Home
-              </button>
-            </div>
-
-            {/* STEP 1 */}
-
-            {step === 1 && (
-              <>
-                <input
-                  className="form-control mb-3"
-                  placeholder="Enter Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-
-                <button className="btn btn-primary w-100" onClick={sendOtp}>
-                  Send OTP
-                </button>
-              </>
-            )}
-
-            {/* STEP 2 */}
-
-            {step === 2 && (
-              <>
-                <input
-                  className="form-control mb-3"
-                  placeholder="Enter OTP"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                />
-
-                <button className="btn btn-success w-100" onClick={verifyOtp}>
-                  Verify OTP
-                </button>
-              </>
-            )}
-
-            {/* STEP 3 — FIXED HERE */}
-
-            {step === 3 && (
-              <>
-                {/* Excel File Input */}
-
-                <input
-                  type="file"
-                  className="form-control mb-3"
-                  accept=".xlsx,.xls"
-                  onChange={handleFileChange}
-                />
+              <div className="d-flex justify-content-between mb-3">
+                <h4 className="fw-bold">Admin Panel</h4>
 
                 <button
-                  className="btn btn-dark w-100"
-                  onClick={uploadExcel}
-                  disabled={loading}
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={goHome}
                 >
-                  {loading ? "Uploading..." : "Upload Excel"}
-                </button>
-              </>
-            )}
-
-            {/* STEP 4 */}
-
-            {step === 4 && (
-              <div className="text-center">
-                <div className="alert alert-success">Upload Completed 🚀</div>
-
-                <button className="btn btn-primary" onClick={goHome}>
-                  Go to Career Page
+                  Home
                 </button>
               </div>
-            )}
+
+              {/* STEP 1 */}
+
+              {step === 1 && (
+                <>
+                  <input
+                    className="form-control mb-3"
+                    value={email || "Loading admin email..."}
+                    readOnly
+                  />
+
+                  <button
+                    className="btn btn-primary w-100"
+                    onClick={sendOtp}
+                    disabled={!email}
+                  >
+                    Send OTP
+                  </button>
+                </>
+              )}
+
+              {/* STEP 2 */}
+
+              {step === 2 && (
+                <>
+                  <input
+                    className="form-control mb-3"
+                    placeholder="Enter OTP"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                  />
+
+                  <button
+                    className="btn btn-success w-100"
+                    onClick={verifyOtp}
+                    disabled={!otp}
+                  >
+                    Verify OTP
+                  </button>
+                </>
+              )}
+
+              {/* STEP 3 */}
+
+              {step === 3 && (
+                <>
+                  <input
+                    type="file"
+                    className="form-control mb-3"
+                    accept=".xlsx,.xls"
+                    onChange={handleFileChange}
+                  />
+
+                  <button
+                    className="btn btn-dark w-100"
+                    onClick={uploadExcel}
+                    disabled={loading}
+                  >
+                    {loading ? "Uploading..." : "Upload Excel"}
+                  </button>
+                </>
+              )}
+
+              {/* STEP 4 */}
+
+              {step === 4 && (
+                <div className="text-center">
+                  <div className="alert alert-success">Upload Completed 🚀</div>
+
+                  <button className="btn btn-primary" onClick={goHome}>
+                    Go to Career Page
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
